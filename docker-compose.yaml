@@ -54,7 +54,7 @@ services:
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy-edge:4317
       - TRAFFIC_GEN_ENABLED=false
       - DOWNSTREAM_URLS=http://app-group2-worker:8080/fast
-      - DOWNSTREAM_CALL_COUNT=10
+      - DOWNSTREAM_CALL_COUNT=30
     networks: [app-net]
 
   app-group2-worker:
@@ -95,6 +95,9 @@ services:
     build:
       context: ./alloy-edge
     container_name: alloy-edge
+    user: root
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     networks: [app-net, pipeline-net, storage-net]
 
   alloy-router:

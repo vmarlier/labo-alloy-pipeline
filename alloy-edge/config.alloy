@@ -1,16 +1,13 @@
+// -----------------------------------------------------
+// 1. Traces (OTLP Push)
+// -----------------------------------------------------
 otelcol.receiver.otlp "default" {
   grpc { endpoint = "0.0.0.0:4317" }
   http { endpoint = "0.0.0.0:4318" }
 
   output {
-    metrics = [otelcol.exporter.otlphttp.victoriametrics.input]
-    traces  = [otelcol.exporter.otlp.router.input]
-    logs    = [otelcol.exporter.otlp.router.input]
+    traces = [otelcol.exporter.otlp.router.input]
   }
-}
-
-otelcol.exporter.otlphttp "victoriametrics" {
-  client { endpoint = "http://victoriametrics:8428/opentelemetry" }
 }
 
 otelcol.exporter.otlp "router" {
@@ -18,4 +15,68 @@ otelcol.exporter.otlp "router" {
     endpoint = "alloy-router:4317"
     tls { insecure = true }
   }
+}
+
+// -----------------------------------------------------
+// 2. Docker Discovery (Equivalent to K8s discovery)
+// -----------------------------------------------------
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "producers" {
+  targets = discovery.docker.containers.targets
+
+  // Clean up the container name for Loki/Grafana labels
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+  
+  // Use a loose regex to match "generator" or "app-group" anywhere in the name
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = ".*(generator-|app-group).*"
+    action        = "keep"
+  }
+}
+
+// -----------------------------------------------------
+// 3. Metrics Pipeline (Prometheus Scrape)
+// -----------------------------------------------------
+discovery.relabel "metrics" {
+  targets = discovery.relabel.producers.output
+  
+  // Docker SD provides the IP, but we force the port to 8080
+  rule {
+    source_labels = ["__address__"]
+    regex         = "([^:]+)(?::.*)?"  // Captures the IP, ignores existing port
+    target_label  = "__address__"
+    replacement   = "${1}:8080"
+  }
+}
+
+prometheus.scrape "producers" {
+  targets         = discovery.relabel.metrics.output
+  forward_to      = [prometheus.remote_write.victoriametrics.receiver]
+  scrape_interval = "15s"
+}
+
+prometheus.remote_write "victoriametrics" {
+  endpoint { url = "http://victoriametrics:8428/api/v1/write" }
+}
+
+// -----------------------------------------------------
+// 4. Logs Pipeline (Docker Socket -> Router)
+// -----------------------------------------------------
+loki.source.docker "producers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.producers.output
+  forward_to = [loki.write.router.receiver]
+  labels     = { "job" = "docker_logs" }
+}
+
+loki.write "router" {
+  endpoint { url = "http://alloy-router:3100/loki/api/v1/push" }
 }

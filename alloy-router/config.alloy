@@ -9,13 +9,20 @@ otelcol.receiver.otlp "default" {
       otelcol.exporter.loadbalancing.tail_sampling.input,
       otelcol.exporter.loadbalancing.span_metrics.input,
     ]
-    logs = [otelcol.exporter.loadbalancing.grafana.input]
   }
 }
 
 otelcol.exporter.loadbalancing "tail_sampling" {
   routing_key = "traceID"
-  protocol { otlp { tls { insecure = true } } }
+  protocol { 
+    otlp { 
+      client {
+        tls { 
+          insecure = true 
+        } 
+      }
+    } 
+  }
   resolver {
     dns {
       hostname = "alloy-tail-sampling"
@@ -26,7 +33,15 @@ otelcol.exporter.loadbalancing "tail_sampling" {
 
 otelcol.exporter.loadbalancing "span_metrics" {
   routing_key = "traceID"
-  protocol { otlp { tls { insecure = true } } }
+  protocol { 
+    otlp { 
+      client {
+        tls { 
+          insecure = true 
+        } 
+      }
+    } 
+  }
   resolver {
     dns {
       hostname = "alloy-span-metrics"
@@ -35,13 +50,16 @@ otelcol.exporter.loadbalancing "span_metrics" {
   }
 }
 
-otelcol.exporter.loadbalancing "grafana" {
-  routing_key = "service"
-  protocol { otlp { tls { insecure = true } } }
-  resolver {
-    dns {
-      hostname = "alloy-grafana"
-      port = 4317
-    }
+loki.source.api "default" {
+  http {
+    listen_address = "0.0.0.0"
+    listen_port = 3100
+  }
+  forward_to = [loki.write.grafana.receiver]
+}
+
+loki.write "grafana" {
+  endpoint {
+    url = "http://alloy-grafana:3100/loki/api/v1/push"
   }
 }

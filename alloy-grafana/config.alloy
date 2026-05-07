@@ -1,13 +1,33 @@
-otelcol.receiver.otlp "default" {
-  grpc { endpoint = "0.0.0.0:4317" }
-  output { logs = [otelcol.exporter.loki.default.input] }
+loki.source.api "default" {
+  http {
+    listen_address = "0.0.0.0"
+    listen_port = 3100
+  }
+  forward_to = [loki.process.default.receiver]
 }
 
-otelcol.exporter.loki "default" {
-  forward_to = [loki.write.default.receiver]
+loki.process "default" {
+  forward_to = [loki.write.local.receiver]
+
+  // Parse the JSON logs emitted by our Go app
+  stage.json {
+    expressions = {
+      level    = "level",
+      msg      = "msg",
+      trace_id = "trace_id",
+      span_id  = "span_id",
+    }
+  }
+
+  // Promote level to a searchable label in Grafana
+  stage.labels {
+    values = {
+      level = "level",
+    }
+  }
 }
 
-loki.write "default" {
+loki.write "local" {
   endpoint {
     url = "http://loki:3100/loki/api/v1/push"
   }
