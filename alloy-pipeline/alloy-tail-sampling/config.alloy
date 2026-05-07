@@ -1,0 +1,39 @@
+otelcol.receiver.otlp "default" {
+  grpc { endpoint = "0.0.0.0:4317" }
+  output { traces = [otelcol.processor.tail_sampling.default.input] }
+}
+
+otelcol.processor.tail_sampling "default" {
+  decision_wait = "10s" # Lowered for the lab environment
+  num_traces = 10000
+
+  // 1. Keep 100% of errors
+  policy {
+    name = "errors"
+    type = "status_code"
+    status_code { status_codes = ["ERROR"] }
+  }
+
+  // 2. Keep 100% of slow traces (> 1 second)
+  policy {
+    name = "slow-traces"
+    type = "latency"
+    latency { threshold_ms = 1000 }
+  }
+
+  // 3. Keep 10% of everything else
+  policy {
+    name = "successes"
+    type = "probabilistic"
+    probabilistic { sampling_percentage = 10 }
+  }
+
+  output { traces = [otelcol.exporter.otlp.tempo.input] }
+}
+
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "tempo:4317"
+    tls { insecure = true }
+  }
+}

@@ -1,5 +1,7 @@
 services:
-  # Producer A (The 'Frontend')
+  # -------------------------------------
+  # APP LAYER
+  # -------------------------------------
   producer-a:
     build:
       context: ./producer
@@ -16,7 +18,6 @@ services:
     networks:
       - app-net
 
-  # Producer B (The 'Backend')
   producer-b:
     build:
       context: ./producer
@@ -31,6 +32,50 @@ services:
     networks:
       - app-net
 
+  alloy-edge:
+    build:
+      context: ./alloy-edge
+      dockerfile: Dockerfile
+    container_name: alloy-edge
+    networks:
+      - app-net         # Receives from producers
+      - pipeline-net    # Sends to router
+      - storage-net     # Sends metrics to VictoriaMetrics directly
+
+  # -------------------------------------
+  # PIPELINE LAYER
+  # -------------------------------------
+  alloy-router:
+    build:
+      context: ./alloy-router
+      dockerfile: Dockerfile
+    networks:
+      - pipeline-net    # Bridges edge and processors
+
+  alloy-tail-sampling:
+    build:
+      context: ./alloy-tail-sampling
+    networks:
+      - pipeline-net    # Receives from router
+      - storage-net     # Sends to Tempo
+
+  alloy-span-metrics:
+    build:
+      context: ./alloy-span-metrics
+    networks:
+      - pipeline-net    # Receives from router
+      - storage-net     # Sends to VictoriaMetrics
+
+  alloy-grafana:
+    build:
+      context: ./alloy-grafana
+    networks:
+      - pipeline-net    # Receives from router
+      - storage-net     # Sends to Loki
+
+  # -------------------------------------
+  # STORAGE LAYER
+  # -------------------------------------
   victoriametrics:
     build:
       context: ./victoriametrics

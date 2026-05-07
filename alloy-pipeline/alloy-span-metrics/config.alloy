@@ -1,0 +1,23 @@
+otelcol.receiver.otlp "default" {
+  grpc { endpoint = "0.0.0.0:4317" }
+  output { traces = [otelcol.connector.spanmetrics.default.input] }
+}
+
+otelcol.connector.spanmetrics "default" {
+  dimension { name = "http.request.method" }
+  dimension { name = "http.response.status_code" }
+  dimension { name = "handler.type" } # Custom attribute from our Go producer
+
+  histogram {
+    unit = "s"
+    explicit {
+      buckets = ["10ms", "50ms", "100ms", "250ms", "500ms", "1000ms", "2000ms", "5000ms"]
+    }
+  }
+
+  output { metrics = [otelcol.exporter.otlphttp.victoriametrics.input] }
+}
+
+otelcol.exporter.otlphttp "victoriametrics" {
+  client { endpoint = "http://victoriametrics:8428/opentelemetry" }
+}
