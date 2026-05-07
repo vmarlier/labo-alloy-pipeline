@@ -4,7 +4,7 @@ otelcol.receiver.otlp "default" {
 }
 
 otelcol.processor.tail_sampling "default" {
-  decision_wait = "10s" # Lowered for the lab environment
+  decision_wait = "10s" // Lowered for the lab environment
   num_traces = 10000
 
   // 1. Keep 100% of errors
@@ -34,6 +34,8 @@ otelcol.processor.tail_sampling "default" {
 otelcol.exporter.otlp "tempo" {
   client {
     endpoint = "tempo:4317"
-    tls { insecure = true }
+    tls {
+      insecure = true
+    }
   }
 }

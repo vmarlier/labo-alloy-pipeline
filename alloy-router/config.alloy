@@ -14,13 +14,28 @@ otelcol.receiver.otlp "default" {
 }
 
 otelcol.exporter.otlp "tail_sampling" {
-  client { endpoint = "alloy-tail-sampling:4317"; tls { insecure = true } }
+  client {
+    endpoint = "alloy-tail-sampling:4317"
+    tls {
+      insecure = true
+    }
+  }
 }
 
 otelcol.exporter.otlp "span_metrics" {
-  client { endpoint = "alloy-span-metrics:4317"; tls { insecure = true } }
+  client {
+    endpoint = "alloy-span-metrics:4317"
+    tls {
+      insecure = true
+    }
+  }
 }
 
 otelcol.exporter.otlp "grafana" {
-  client { endpoint = "alloy-grafana:4317"; tls { insecure = true } }
+  client {
+    endpoint = "alloy-grafana:4317"
+    tls {
+      insecure = true
+    }
+  }
 }

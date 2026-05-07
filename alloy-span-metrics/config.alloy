@@ -6,7 +6,7 @@ otelcol.receiver.otlp "default" {
 otelcol.connector.spanmetrics "default" {
   dimension { name = "http.request.method" }
   dimension { name = "http.response.status_code" }
-  dimension { name = "handler.type" } # Custom attribute from our Go producer
+  dimension { name = "handler.type" } // Custom attribute from our Go producer
 
   histogram {
     unit = "s"
