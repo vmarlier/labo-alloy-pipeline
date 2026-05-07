@@ -22,3 +22,9 @@ This lab reproduces a high-availability observability pipeline using **Grafana A
 * **VictoriaMetrics:** Primary time-series database for metrics.
 * **Loki & Tempo:** Local storage for logs and traces.
 * **Grafana:** Central dashboarding for both the application data and the **Pipeline Health** (monitoring the collectors themselves).
+
+## How to use
+
+```
+make up
+```
