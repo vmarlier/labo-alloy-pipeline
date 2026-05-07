@@ -1,6 +1,6 @@
 # Alloy Observability Pipeline Lab
 
-This lab reproduces a high-availability observability pipeline using **Grafana Alloy**. It is modeled after the Pleo production architecture.
+This lab reproduces a high-availability observability pipeline using **Grafana Alloy**.
 
 ## Architecture
 
@@ -9,9 +9,6 @@ This lab reproduces a high-availability observability pipeline using **Grafana A
 * **App Producers (2+ Replicas):** Golang applications generating OTLP metrics, logs, and traces.
 * **Edge Alloys (Collector):** * **Metrics:** Directly forwards to **VictoriaMetrics**.
     * **Logs/Traces:** Forwards via gRPC to the load-balanced **Alloy Router** pool.
-
-> [!NOTE]
-> relates to grafana-k8s-monitoring at Pleo, details [here](https://github.com/grafana/k8s-monitoring-helm/tree/main/charts/k8s-monitoring
 
 ### 2. Processing Layer (The "Pipeline")
 
