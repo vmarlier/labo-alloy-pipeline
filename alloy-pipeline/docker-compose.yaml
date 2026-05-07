@@ -5,7 +5,6 @@ services:
   producer-a:
     build:
       context: ./producer
-      dockerfile: Dockerfile
     container_name: producer-a
     ports:
       - "8081:8080"
@@ -21,7 +20,6 @@ services:
   producer-b:
     build:
       context: ./producer
-      dockerfile: Dockerfile
     container_name: producer-b
     ports:
       - "8082:8080"
@@ -35,7 +33,6 @@ services:
   alloy-edge:
     build:
       context: ./alloy-edge
-      dockerfile: Dockerfile
     container_name: alloy-edge
     networks:
       - app-net         # Receives from producers
@@ -48,13 +45,18 @@ services:
   alloy-router:
     build:
       context: ./alloy-router
-      dockerfile: Dockerfile
+    container_name: alloy-router
+    depends_on:
+      - alloy-edge
     networks:
       - pipeline-net    # Bridges edge and processors
 
   alloy-tail-sampling:
     build:
       context: ./alloy-tail-sampling
+    container_name: alloy-tail-sampling
+    depends_on:
+      - tempo
     networks:
       - pipeline-net    # Receives from router
       - storage-net     # Sends to Tempo
@@ -62,6 +64,9 @@ services:
   alloy-span-metrics:
     build:
       context: ./alloy-span-metrics
+    container_name: alloy-span-metrics
+    depends_on:
+      - victoriametrics
     networks:
       - pipeline-net    # Receives from router
       - storage-net     # Sends to VictoriaMetrics
@@ -69,6 +74,9 @@ services:
   alloy-grafana:
     build:
       context: ./alloy-grafana
+    container_name: alloy-grafana
+    depends_on:
+      - loki
     networks:
       - pipeline-net    # Receives from router
       - storage-net     # Sends to Loki
@@ -79,6 +87,7 @@ services:
   victoriametrics:
     build:
       context: ./victoriametrics
+    container_name: victoriametrics
     ports:
       - "8428:8428"
     networks:
@@ -87,6 +96,7 @@ services:
   loki:
     build:
       context: ./loki
+    container_name: loki
     ports:
       - "3100:3100"
     networks:
@@ -95,6 +105,7 @@ services:
   tempo:
     build:
       context: ./tempo
+    container_name: tempo
     ports:
       - "3200:3200"
       - "4317:4317" # OTLP gRPC
@@ -105,6 +116,7 @@ services:
   grafana:
     build:
       context: ./grafana
+    container_name: grafana
     ports:
       - "3000:3000"
     environment:
