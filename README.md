@@ -31,5 +31,20 @@ The pipeline components run with **2 replicas each** to validate load balancing 
 ## How to use
 
 ```
+# start
+make tidy
 make up
+make open-grafana
+
+# reload
+make reload
+
+# stop
+make down
+make clean
 ```
+
+## Tooling
+
+- [OrbStack](https://orbstack.dev/)
+
