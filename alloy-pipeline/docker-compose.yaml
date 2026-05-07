@@ -14,7 +14,7 @@ services:
       - ERROR_RATE=5
       - SLOW_RATE=10
     networks:
-      - alloy-lab
+      - app-net
 
   # Producer B (The 'Backend')
   producer-b:
@@ -29,8 +29,54 @@ services:
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy-edge:4317
       - TRAFFIC_GEN_ENABLED=false # B only reacts to A
     networks:
-      - alloy-lab
+      - app-net
+
+  victoriametrics:
+    build:
+      context: ./victoriametrics
+    ports:
+      - "8428:8428"
+    networks:
+      - storage-net
+
+  loki:
+    build:
+      context: ./loki
+    ports:
+      - "3100:3100"
+    networks:
+      - storage-net
+
+  tempo:
+    build:
+      context: ./tempo
+    ports:
+      - "3200:3200"
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+    networks:
+      - storage-net
+
+  grafana:
+    build:
+      context: ./grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+    depends_on:
+      - victoriametrics
+      - loki
+      - tempo
+    networks:
+      - storage-net
 
 networks:
-  alloy-lab:
+  app-net:
+    driver: bridge
+  pipeline-net:
+    driver: bridge
+  storage-net:
     driver: bridge
