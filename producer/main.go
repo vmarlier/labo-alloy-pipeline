@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/prometheus"
@@ -73,8 +74,6 @@ func (h *OTelHandler) Handle(ctx context.Context, r slog.Record) error {
 
 	// Capture for /logs endpoint
 	h.Handler.Handle(ctx, r) // We ignore error here for brevity
-	// Note: In a production app, we'd parse the record properly.
-	// For this lab, we'll store a simplified map.
 	logMap := make(map[string]interface{})
 	logMap["time"] = r.Time.Format(time.RFC3339)
 	logMap["level"] = r.Level.String()
@@ -85,7 +84,7 @@ func (h *OTelHandler) Handle(ctx context.Context, r slog.Record) error {
 	}
 	store.AddLog(logMap)
 
-	return h.Handler.Handle(ctx, r)
+	return nil
 }
 
 // --- OTel Trace Exporter for /traces ---
@@ -154,6 +153,8 @@ func main() {
 	mux.Handle("/fast", otelhttp.NewHandler(http.HandlerFunc(fastHandler), "fast"))
 	mux.Handle("/slow", otelhttp.NewHandler(http.HandlerFunc(slowHandler), "slow"))
 	mux.Handle("/error", otelhttp.NewHandler(http.HandlerFunc(errorHandler), "error"))
+	mux.Handle("/random", otelhttp.NewHandler(http.HandlerFunc(handleRandom), "RandomRequest"))
+	mux.Handle("/cascade", otelhttp.NewHandler(http.HandlerFunc(handleCascade), "CascadeRequest"))
 
 	// Observability Endpoints
 	mux.Handle("/metrics", promhttp.Handler())
@@ -177,12 +178,16 @@ func main() {
 // --- Handlers ---
 
 func fastHandler(w http.ResponseWriter, r *http.Request) {
+	span := otrace.SpanFromContext(r.Context())
+	span.SetAttributes(attribute.String("handler.type", "fast"))
 	slog.InfoContext(r.Context(), "Handled fast request successfully", "handler.type", "fast")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("OK"))
 }
 
 func slowHandler(w http.ResponseWriter, r *http.Request) {
+	span := otrace.SpanFromContext(r.Context())
+	span.SetAttributes(attribute.String("handler.type", "slow"))
 	time.Sleep(1500 * time.Millisecond)
 	slog.InfoContext(r.Context(), "Handled slow request", "handler.type", "slow")
 	w.WriteHeader(http.StatusOK)
@@ -191,19 +196,59 @@ func slowHandler(w http.ResponseWriter, r *http.Request) {
 
 func errorHandler(w http.ResponseWriter, r *http.Request) {
 	span := otrace.SpanFromContext(r.Context())
+	span.SetAttributes(attribute.String("handler.type", "error"))
 	span.SetStatus(codes.Error, "simulated error")
 	slog.ErrorContext(r.Context(), "Handled error request", "handler.type", "error")
 	http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 }
 
+func handleRandom(w http.ResponseWriter, r *http.Request) {
+	errorRate := getEnvAsInt("ERROR_RATE", 0)
+	slowRate := getEnvAsInt("SLOW_RATE", 0)
+
+	roll := rand.Intn(100)
+	if roll < errorRate {
+		errorHandler(w, r)
+	} else if roll < (errorRate + slowRate) {
+		slowHandler(w, r)
+	} else {
+		fastHandler(w, r)
+	}
+}
+
+func handleCascade(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	span := otrace.SpanFromContext(ctx)
+	span.SetAttributes(attribute.String("handler.type", "cascade"))
+
+	downstreamURLs := strings.Split(os.Getenv("DOWNSTREAM_URLS"), ",")
+	callCount := getEnvAsInt("DOWNSTREAM_CALL_COUNT", 1)
+
+	if len(downstreamURLs) > 0 && downstreamURLs[0] != "" {
+		client := http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
+
+		for i := 0; i < callCount; i++ {
+			for _, url := range downstreamURLs {
+				req, _ := http.NewRequestWithContext(ctx, "GET", strings.TrimSpace(url), nil)
+				resp, err := client.Do(req)
+				if err == nil {
+					resp.Body.Close()
+				}
+			}
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Cascade OK"))
+}
+
 // --- Traffic Generator ---
 
 func startTrafficGenerator() {
-	// Use the OTel-instrumented client so traces carry over to B
 	client := http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
 
-	errRate, _ := strconv.Atoi(getEnv("ERROR_RATE", "10"))
-	slowRate, _ := strconv.Atoi(getEnv("SLOW_RATE", "10"))
+	errRate := getEnvAsInt("ERROR_RATE", 10)
+	slowRate := getEnvAsInt("SLOW_RATE", 10)
 	downstreams := os.Getenv("DOWNSTREAM_URLS")
 
 	myPort := getEnv("APP_PORT", "8080")
@@ -212,30 +257,26 @@ func startTrafficGenerator() {
 	slog.Info("Traffic generator started", "downstream_enabled", downstreams != "")
 
 	for {
-		// Wait between 100ms and 500ms
 		time.Sleep(time.Duration(100+rand.Intn(400)) * time.Millisecond)
 
-		// 1. Determine the path based on rates
-		path := "/fast"
-		roll := rand.Intn(100)
-		if roll < errRate {
-			path = "/error"
-		} else if roll < (errRate + slowRate) {
-			path = "/slow"
-		}
+		fullURL := ""
 
-		// 2. Determine the target (Local vs Downstream)
-		targetBase := localBase
 		if downstreams != "" {
+			// If downstreams are configured, hit the downstream exactly as written
 			urls := strings.Split(downstreams, ",")
-			// Pick a random downstream from the list
-			targetBase = strings.TrimSpace(urls[rand.Intn(len(urls))])
-			targetBase = strings.TrimSuffix(targetBase, "/")
+			fullURL = strings.TrimSpace(urls[rand.Intn(len(urls))])
+		} else {
+			// Otherwise hit local endpoints based on probability
+			path := "/fast"
+			roll := rand.Intn(100)
+			if roll < errRate {
+				path = "/error"
+			} else if roll < (errRate + slowRate) {
+				path = "/slow"
+			}
+			fullURL = localBase + path
 		}
 
-		fullURL := targetBase + path
-
-		// 3. Execute request
 		req, err := http.NewRequestWithContext(context.Background(), "GET", fullURL, nil)
 		if err != nil {
 			continue
@@ -250,9 +291,23 @@ func startTrafficGenerator() {
 	}
 }
 
+// --- Helpers ---
+
 func getEnv(key, fallback string) string {
 	if value, ok := os.LookupEnv(key); ok {
 		return value
 	}
 	return fallback
+}
+
+func getEnvAsInt(key string, fallback int) int {
+	strValue := getEnv(key, "")
+	if strValue == "" {
+		return fallback
+	}
+	value, err := strconv.Atoi(strValue)
+	if err != nil {
+		return fallback
+	}
+	return value
 }

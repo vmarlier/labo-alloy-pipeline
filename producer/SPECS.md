@@ -32,6 +32,8 @@ These endpoints simulate different application behaviors to test pipeline rules 
 | `/fast` | `200 OK` | Responds immediately. | Tests if tail-sampling correctly drops a high percentage of healthy traffic. Validates RED metrics. |
 | `/slow` | `200 OK` | Sleeps for 1.5 seconds before responding. | Proves tail-sampling correctly identifies and keeps high-latency traces. |
 | `/error`| `500 Error` | Sets OTel span status to `codes.Error`. | Proves tail-sampling bypasses rate limits to retain **100%** of traces containing errors. |
+| `/random` | Mixed | Rolls a random number against `ERROR_RATE` and `SLOW_RATE` to determine its own behavior dynamically. |
+| `/cascade`| `200 OK` | Triggers a loop, making `DOWNSTREAM_CALL_COUNT` requests to `DOWNSTREAM_URLS`, passing the trace context to generate massive traces. |
 
 ### 3.2. Local Observability Endpoints (Standalone Viewing)
 To allow inspection of telemetry data even when the Alloy pipeline is offline or not yet configured, the application must expose local endpoints:
@@ -63,6 +65,7 @@ The application is highly reusable and entirely configured via environment varia
 | `ERROR_RATE` | `10` | Percentage of generated traffic that should hit the `/error` endpoint (0-100). |
 | `SLOW_RATE` | `10` | Percentage of generated traffic that should hit the `/slow` endpoint (0-100). |
 | `DOWNSTREAM_URLS` | *(empty)* | Comma-separated list of URLs to call to test distributed tracing. |
+| `DOWNSTREAM_CALL_COUNT`| `1` | Number of times to loop the downstream call when the `/cascade` endpoint is hit. |
 
 ## 6. Logging Standard
 

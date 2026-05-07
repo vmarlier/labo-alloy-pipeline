@@ -1,134 +1,169 @@
 services:
-  # -------------------------------------
-  # APP LAYER
-  # -------------------------------------
-  producer-a:
+  # =====================================
+  # 1. LOAD GENERATORS
+  # =====================================
+  generator-group1:
     build:
       context: ./producer
-    container_name: producer-a
-    ports:
-      - "8081:8080"
     environment:
-      - OTEL_SERVICE_NAME=producer-a
+      - OTEL_SERVICE_NAME=generator-1
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy-edge:4317
-      - DOWNSTREAM_URLS=http://producer-b:8080
-      - ERROR_RATE=5
-      - SLOW_RATE=10
-    networks:
-      - app-net
+      - TRAFFIC_GEN_ENABLED=true
+      - DOWNSTREAM_URLS=http://app-group1:8080/random
+    networks: [app-net]
 
-  producer-b:
+  generator-group2:
     build:
       context: ./producer
-    container_name: producer-b
-    ports:
-      - "8082:8080"
     environment:
-      - OTEL_SERVICE_NAME=producer-b
+      - OTEL_SERVICE_NAME=generator-2
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy-edge:4317
-      - TRAFFIC_GEN_ENABLED=false # B only reacts to A
-    networks:
-      - app-net
+      - TRAFFIC_GEN_ENABLED=true
+      - DOWNSTREAM_URLS=http://app-group2-main:8080/cascade
+    networks: [app-net]
 
+  generator-group3:
+    build:
+      context: ./producer
+    environment:
+      - OTEL_SERVICE_NAME=generator-3
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy-edge:4317
+      - TRAFFIC_GEN_ENABLED=true
+      - DOWNSTREAM_URLS=http://app-group3-main:8080/cascade
+    networks: [app-net]
+
+  # =====================================
+  # 2. APP GROUPS
+  # =====================================
+  app-group1:
+    build:
+      context: ./producer
+    environment:
+      - OTEL_SERVICE_NAME=app-group1
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy-edge:4317
+      - TRAFFIC_GEN_ENABLED=false
+      - ERROR_RATE=10
+      - SLOW_RATE=90
+    networks: [app-net]
+
+  app-group2-main:
+    build:
+      context: ./producer
+    environment:
+      - OTEL_SERVICE_NAME=app-group2-main
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy-edge:4317
+      - TRAFFIC_GEN_ENABLED=false
+      - DOWNSTREAM_URLS=http://app-group2-worker:8080/fast
+      - DOWNSTREAM_CALL_COUNT=10
+    networks: [app-net]
+
+  app-group2-worker:
+    build:
+      context: ./producer
+    deploy: { replicas: 3 }
+    environment:
+      - OTEL_SERVICE_NAME=app-group2-worker
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy-edge:4317
+      - TRAFFIC_GEN_ENABLED=false
+    networks: [app-net]
+
+  app-group3-main:
+    build:
+      context: ./producer
+    environment:
+      - OTEL_SERVICE_NAME=app-group3-main
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy-edge:4317
+      - TRAFFIC_GEN_ENABLED=false
+      - DOWNSTREAM_URLS=http://app-group3-worker:8080/slow
+      - DOWNSTREAM_CALL_COUNT=5
+    networks: [app-net]
+
+  app-group3-worker:
+    build:
+      context: ./producer
+    environment:
+      - OTEL_SERVICE_NAME=app-group3-worker
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy-edge:4317
+      - TRAFFIC_GEN_ENABLED=false
+      - SLOW_RATE=100
+    networks: [app-net]
+
+  # =====================================
+  # 3. PIPELINE LAYER (Highly Available)
+  # =====================================
   alloy-edge:
     build:
       context: ./alloy-edge
     container_name: alloy-edge
-    networks:
-      - app-net         # Receives from producers
-      - pipeline-net    # Sends to router
-      - storage-net     # Sends metrics to VictoriaMetrics directly
+    networks: [app-net, pipeline-net, storage-net]
 
-  # -------------------------------------
-  # PIPELINE LAYER
-  # -------------------------------------
   alloy-router:
     build:
       context: ./alloy-router
-    container_name: alloy-router
-    depends_on:
-      - alloy-edge
-    networks:
-      - pipeline-net    # Bridges edge and processors
+    depends_on: [alloy-edge]
+    deploy:
+      replicas: 2
+    networks: [pipeline-net]
 
   alloy-tail-sampling:
     build:
       context: ./alloy-tail-sampling
-    container_name: alloy-tail-sampling
-    depends_on:
-      - tempo
-    networks:
-      - pipeline-net    # Receives from router
-      - storage-net     # Sends to Tempo
+    depends_on: [tempo]
+    deploy:
+      replicas: 2
+    networks: [pipeline-net, storage-net]
 
   alloy-span-metrics:
     build:
       context: ./alloy-span-metrics
-    container_name: alloy-span-metrics
-    depends_on:
-      - victoriametrics
-    networks:
-      - pipeline-net    # Receives from router
-      - storage-net     # Sends to VictoriaMetrics
+    depends_on: [victoriametrics]
+    deploy:
+      replicas: 2
+    networks: [pipeline-net, storage-net]
 
   alloy-grafana:
     build:
       context: ./alloy-grafana
-    container_name: alloy-grafana
-    depends_on:
-      - loki
-    networks:
-      - pipeline-net    # Receives from router
-      - storage-net     # Sends to Loki
+    depends_on: [loki]
+    deploy:
+      replicas: 2
+    networks: [pipeline-net, storage-net]
 
-  # -------------------------------------
-  # STORAGE LAYER
-  # -------------------------------------
+  # =====================================
+  # 4. STORAGE LAYER
+  # =====================================
   victoriametrics:
     build:
       context: ./victoriametrics
     container_name: victoriametrics
-    ports:
-      - "8428:8428"
-    networks:
-      - storage-net
+    ports: ["8428:8428"]
+    networks: [storage-net]
 
   loki:
     build:
       context: ./loki
     container_name: loki
-    ports:
-      - "3100:3100"
-    networks:
-      - storage-net
+    ports: ["3100:3100"]
+    networks: [storage-net]
 
   tempo:
     build:
       context: ./tempo
     container_name: tempo
-    ports:
-      - "3200:3200"
-      - "4317:4317" # OTLP gRPC
-      - "4318:4318" # OTLP HTTP
-    networks:
-      - storage-net
+    ports: ["3200:3200", "4317:4317", "4318:4318"]
+    networks: [storage-net]
 
   grafana:
     build:
       context: ./grafana
     container_name: grafana
-    ports:
-      - "3000:3000"
+    ports: ["3000:3000"]
     environment:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
       - GF_AUTH_DISABLE_LOGIN_FORM=true
-    depends_on:
-      - victoriametrics
-      - loki
-      - tempo
-    networks:
-      - storage-net
+    depends_on: [victoriametrics, loki, tempo]
+    networks: [storage-net]
 
 networks:
   app-net:

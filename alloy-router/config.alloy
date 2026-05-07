@@ -6,36 +6,42 @@ otelcol.receiver.otlp "default" {
 
   output {
     traces = [
-      otelcol.exporter.otlp.tail_sampling.input,
-      otelcol.exporter.otlp.span_metrics.input,
+      otelcol.exporter.loadbalancing.tail_sampling.input,
+      otelcol.exporter.loadbalancing.span_metrics.input,
     ]
-    logs = [otelcol.exporter.otlp.grafana.input]
+    logs = [otelcol.exporter.loadbalancing.grafana.input]
   }
 }
 
-otelcol.exporter.otlp "tail_sampling" {
-  client {
-    endpoint = "alloy-tail-sampling:4317"
-    tls {
-      insecure = true
+otelcol.exporter.loadbalancing "tail_sampling" {
+  routing_key = "traceID"
+  protocol { otlp { tls { insecure = true } } }
+  resolver {
+    dns {
+      hostname = "alloy-tail-sampling"
+      port = 4317
     }
   }
 }
 
-otelcol.exporter.otlp "span_metrics" {
-  client {
-    endpoint = "alloy-span-metrics:4317"
-    tls {
-      insecure = true
+otelcol.exporter.loadbalancing "span_metrics" {
+  routing_key = "traceID"
+  protocol { otlp { tls { insecure = true } } }
+  resolver {
+    dns {
+      hostname = "alloy-span-metrics"
+      port = 4317
     }
   }
 }
 
-otelcol.exporter.otlp "grafana" {
-  client {
-    endpoint = "alloy-grafana:4317"
-    tls {
-      insecure = true
+otelcol.exporter.loadbalancing "grafana" {
+  routing_key = "service"
+  protocol { otlp { tls { insecure = true } } }
+  resolver {
+    dns {
+      hostname = "alloy-grafana"
+      port = 4317
     }
   }
 }

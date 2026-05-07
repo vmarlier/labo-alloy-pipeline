@@ -1,21 +1,26 @@
 # Alloy Observability Pipeline Lab
 
-This lab reproduces a high-availability observability pipeline using **Grafana Alloy**.
+This lab environment reproduces a highly available, multi-stage observability pipeline using **Grafana Alloy**, modeled after a production architecture. The goal is to experiment with Alloy as a centralized collector, router, and processor for metrics, logs, and traces.
 
 ## Architecture
 
-### 1. Data Sources (The "Cluster")
+### 1. Application Layer (Load Generators & App Groups & Edge collector)
 
-* **App Producers (2+ Replicas):** Golang applications generating OTLP metrics, logs, and traces.
-* **Edge Alloys (Collector):** * **Metrics:** Directly forwards to **VictoriaMetrics**.
-    * **Logs/Traces:** Forwards via gRPC to the load-balanced **Alloy Router** pool.
+We deploy multiple Go-based producers to simulate distinct microservice behaviors:
 
-### 2. Processing Layer (The "Pipeline")
+*   **Group 1 (Errors & Latency):** Receives traffic and intentionally responds slowly or throws 500 errors.
+*   **Group 2 (High Span Count):** "Fast Cascade". Receives a request and makes 10+ rapid downstream calls to worker microservices, generating massive traces.
+*   **Group 3 (Slow Cascade):** Receives a request and makes multiple sequential slow calls, simulating an N+1 query problem or sluggish downstream dependencies.
+*   **Edge Alloy (DaemonSet/Collector):** Scrapes local metrics and forwards OTLP data to the Router.
 
-* **Alloy Router (2+ Replicas):** Acts as the central traffic controller. Load balances incoming OTLP data to specialized downstream collectors.
-* **Alloy Tail-Sampling:** Applies logic to keep 100% of errors/high-latency traces while sampling healthy traffic.
-* **Alloy Span-Metrics:** Computes RED signals (Rate, Errors, Duration) and writes them to VictoriaMetrics.
-* **Alloy Grafana (Logs):** Handles log transformation and filtering.
+### 2. Pipeline Layer (Highly Available)
+
+The pipeline components run with **2 replicas each** to validate load balancing and trace affinity:
+
+*   **Alloy Router (2 Replicas):** The central entry point. Uses **DNS Load Balancing** to hash incoming spans by `traceID` and route them to the correct downstream processor. This ensures all spans for a single trace end up on the same tail-sampling node.
+*   **Alloy Tail-Sampling (2 Replicas):** Applies sampling policies (e.g., 100% of errors, 1% of successes).
+*   **Alloy Span-Metrics (2 Replicas):** Generates RED metrics from traces.
+*   **Alloy Grafana (2 Replicas):** Processes and forwards logs.
 
 ### 3. Storage & Visualization
 
