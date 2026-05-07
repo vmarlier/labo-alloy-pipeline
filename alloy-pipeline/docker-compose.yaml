@@ -1,0 +1,36 @@
+services:
+  # Producer A (The 'Frontend')
+  producer-a:
+    build:
+      context: ./producer
+      dockerfile: Dockerfile
+    container_name: producer-a
+    ports:
+      - "8081:8080"
+    environment:
+      - OTEL_SERVICE_NAME=producer-a
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy-edge:4317
+      - DOWNSTREAM_URLS=http://producer-b:8080
+      - ERROR_RATE=5
+      - SLOW_RATE=10
+    networks:
+      - alloy-lab
+
+  # Producer B (The 'Backend')
+  producer-b:
+    build:
+      context: ./producer
+      dockerfile: Dockerfile
+    container_name: producer-b
+    ports:
+      - "8082:8080"
+    environment:
+      - OTEL_SERVICE_NAME=producer-b
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy-edge:4317
+      - TRAFFIC_GEN_ENABLED=false # B only reacts to A
+    networks:
+      - alloy-lab
+
+networks:
+  alloy-lab:
+    driver: bridge
