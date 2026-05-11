@@ -32,6 +32,18 @@ services:
       - DOWNSTREAM_URLS=http://app-group3-main:8080/cascade
     networks: [app-net]
 
+  # NEW: Generator for long-running jobs
+  generator-long-jobs:
+    build:
+      context: ./producer
+    environment:
+      - OTEL_SERVICE_NAME=generator-long-jobs
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy-edge:4317
+      - TRAFFIC_GEN_ENABLED=true
+      - DOWNSTREAM_URLS=http://reporting-service:8080/reporting
+      - LONG_JOB_RATE=100
+    networks: [app-net]
+
   # =====================================
   # 2. APP GROUPS
   # =====================================
@@ -46,6 +58,7 @@ services:
       - SLOW_RATE=90
     networks: [app-net]
 
+  # Group 2: Medium Cascade (30 seconds total - spans decision_wait boundary)
   app-group2-main:
     build:
       context: ./producer
@@ -53,8 +66,9 @@ services:
       - OTEL_SERVICE_NAME=app-group2-main
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy-edge:4317
       - TRAFFIC_GEN_ENABLED=false
-      - DOWNSTREAM_URLS=http://app-group2-worker:8080/fast
-      - DOWNSTREAM_CALL_COUNT=30
+      - DOWNSTREAM_URLS=http://app-group2-worker:8080/cascade
+      - DOWNSTREAM_CALL_COUNT=15
+      - CASCADE_HOP_DELAY_MS=2000
     networks: [app-net]
 
   app-group2-worker:
@@ -65,8 +79,10 @@ services:
       - OTEL_SERVICE_NAME=app-group2-worker
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy-edge:4317
       - TRAFFIC_GEN_ENABLED=false
+      - DOWNSTREAM_URLS=http://app-group2-main:8080/cascade
     networks: [app-net]
 
+  # Group 3: Long Cascade (80 seconds - definitely exceeds decision_wait)
   app-group3-main:
     build:
       context: ./producer
@@ -74,8 +90,9 @@ services:
       - OTEL_SERVICE_NAME=app-group3-main
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy-edge:4317
       - TRAFFIC_GEN_ENABLED=false
-      - DOWNSTREAM_URLS=http://app-group3-worker:8080/slow
-      - DOWNSTREAM_CALL_COUNT=5
+      - DOWNSTREAM_URLS=http://app-group3-worker:8080/cascade
+      - DOWNSTREAM_CALL_COUNT=10
+      - CASCADE_HOP_DELAY_MS=8000
     networks: [app-net]
 
   app-group3-worker:
@@ -85,11 +102,45 @@ services:
       - OTEL_SERVICE_NAME=app-group3-worker
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy-edge:4317
       - TRAFFIC_GEN_ENABLED=false
-      - SLOW_RATE=100
+      - DOWNSTREAM_URLS=http://app-group3-main:8080/cascade
+    networks: [app-net]
+
+  # NEW: Reporting Service (simulates long batch jobs)
+  reporting-service:
+    build:
+      context: ./producer
+    environment:
+      - OTEL_SERVICE_NAME=reporting-service
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy-edge:4317
+      - TRAFFIC_GEN_ENABLED=false
+      - REPORT_DURATION=90
+    networks: [app-net]
+
+  # NEW: BFF Service (fast high-throughput)
+  bff-service:
+    build:
+      context: ./producer
+    environment:
+      - OTEL_SERVICE_NAME=bff-service
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy-edge:4317
+      - TRAFFIC_GEN_ENABLED=true
+      - DOWNSTREAM_URLS=http://api-service:8080/fast
+      - ERROR_RATE=5
+    networks: [app-net]
+
+  api-service:
+    build:
+      context: ./producer
+    environment:
+      - OTEL_SERVICE_NAME=api-service
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy-edge:4317
+      - TRAFFIC_GEN_ENABLED=false
+      - SLOW_RATE=10
+      - ERROR_RATE=2
     networks: [app-net]
 
   # =====================================
-  # 3. PIPELINE LAYER (Highly Available)
+  # 3. PIPELINE LAYER
   # =====================================
   alloy-edge:
     build:

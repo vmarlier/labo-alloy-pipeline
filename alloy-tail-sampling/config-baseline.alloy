@@ -4,7 +4,8 @@ otelcol.receiver.otlp "default" {
 }
 
 otelcol.processor.tail_sampling "default" {
-  decision_wait = "20s" // Lowered for the lab environment
+  // BASELINE CONFIGURATION
+  decision_wait = "10s"
   num_traces = 10000
 
   // 1. Keep 100% of errors

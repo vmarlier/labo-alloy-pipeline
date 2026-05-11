@@ -1,0 +1,100 @@
+otelcol.receiver.otlp "default" {
+  grpc { endpoint = "0.0.0.0:4317" }
+  output { traces = [otelcol.processor.tail_sampling.default.input] }
+}
+
+otelcol.processor.tail_sampling "default" {
+  // SERVICE-SPECIFIC CONFIGURATION
+  // Use longer decision_wait for specific services with known long traces
+  decision_wait = "120s"
+  num_traces = 15000  // Increased to handle more concurrent traces
+
+  // 1. Keep 100% of errors (all services)
+  policy {
+    name = "errors"
+    type = "status_code"
+    status_code { status_codes = ["ERROR"] }
+  }
+
+  // 2. Keep 100% of reporting service traces (they're always interesting)
+  policy {
+    name = "reporting-service-all"
+    type = "string_attribute"
+    string_attribute {
+      key = "service.name"
+      values = ["reporting-service"]
+    }
+  }
+
+  // 3. Keep traces with specific report-related attributes
+  policy {
+    name = "reports"
+    type = "string_attribute"
+    string_attribute {
+      key = "handler.type"
+      values = ["reporting", "long-job"]
+    }
+  }
+
+  // 4. BFF/Lambda: Keep slow traces (> 500ms is slow for BFF)
+  policy {
+    name = "bff-slow"
+    type = "composite"
+    composite {
+      max_total_spans_per_second = 1000
+      policy_order = ["bff-service-latency"]
+      
+      composite_sub_policy {
+        name = "bff-service-latency"
+        type = "and"
+        and {
+          and_sub_policy {
+            name = "is-bff"
+            type = "string_attribute"
+            string_attribute {
+              key = "service.name"
+              values = ["bff-service", "api-service"]
+            }
+          }
+          and_sub_policy {
+            name = "is-slow"
+            type = "latency"
+            latency { threshold_ms = 500 }
+          }
+        }
+      }
+    }
+  }
+
+  // 5. Keep very slow traces (> 30 seconds) from any service
+  policy {
+    name = "very-slow-traces"
+    type = "latency"
+    latency { threshold_ms = 30000 }
+  }
+
+  // 6. Normal slow traces (> 1 second)
+  policy {
+    name = "slow-traces"
+    type = "latency"
+    latency { threshold_ms = 1000 }
+  }
+
+  // 7. Sample 10% of fast, successful traces
+  policy {
+    name = "successes"
+    type = "probabilistic"
+    probabilistic { sampling_percentage = 10 }
+  }
+
+  output { traces = [otelcol.exporter.otlp.tempo.input] }
+}
+
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "tempo:4317"
+    tls {
+      insecure = true
+    }
+  }
+}

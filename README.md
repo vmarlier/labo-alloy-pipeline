@@ -8,9 +8,20 @@ This lab environment reproduces a highly available, multi-stage observability pi
 
 We deploy multiple Go-based producers to simulate distinct microservice behaviors:
 
-*   **Group 1 (Errors & Latency):** Receives traffic and intentionally responds slowly or throws 500 errors.
-*   **Group 2 (High Span Count):** "Fast Cascade". Receives a request and makes 10+ rapid downstream calls to worker microservices, generating massive traces.
-*   **Group 3 (Slow Cascade):** Receives a request and makes multiple sequential slow calls, simulating an N+1 query problem or sluggish downstream dependencies.
+#### Standard Traffic Groups
+
+* **Group 1 (Errors & Latency):** Intentionally slow responses and 500 errors
+* **Group 2 (Medium Cascade):** 30-second cascading calls (tests decision_wait boundary)
+* **Group 3 (Long Cascade):** 80-second cascading calls (exceeds current decision_wait)
+
+#### Long-Running Trace Generators
+
+* **Reporting Service:** Realistic 90-second reporting jobs with multi-phase processing
+* **Long Job Service:** Configurable duration jobs (60-180 seconds)
+* **BFF Service:** High-throughput fast traces (control group for comparison)
+
+#### Alloy edge collector
+
 *   **Edge Alloy (DaemonSet/Collector):** Scrapes local metrics and forwards OTLP data to the Router.
 
 ### 2. Pipeline Layer (Highly Available)
